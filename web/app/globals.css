@@ -1,0 +1,30 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  color-scheme: dark;
+}
+
+html,
+body {
+  background: #07090c;
+  color: #e7ecf1;
+}
+
+body {
+  font-feature-settings: "ss01" on, "tnum" on;
+}
+
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+::-webkit-scrollbar-thumb {
+  background: #2a3442;
+  border-radius: 999px;
+}
+
+a {
+  color: inherit;
+}

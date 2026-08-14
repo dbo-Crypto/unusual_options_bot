@@ -1,0 +1,99 @@
+services:
+  postgres:
+    image: timescale/timescaledb:2.17.2-pg16
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-uoa}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-uoa}
+      POSTGRES_DB: ${POSTGRES_DB:-uoa}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./backend/app/schema.sql:/docker-entrypoint-initdb.d/01-schema.sql:ro
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-uoa} -d ${POSTGRES_DB:-uoa}"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  api:
+    build:
+      context: ./backend
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8000
+    environment:
+      DATA_MODE: ${DATA_MODE:-replay}
+      POSTGRES_USER: ${POSTGRES_USER:-uoa}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-uoa}
+      POSTGRES_DB: ${POSTGRES_DB:-uoa}
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: 5432
+      REDIS_URL: redis://redis:6379/0
+      TZ: America/New_York
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+      XAI_API_KEY: ${XAI_API_KEY:-}
+      XAI_MODEL: ${XAI_MODEL:-grok-4.5}
+    ports:
+      - "8000:8000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:8000/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+
+  worker:
+    build:
+      context: ./backend
+    command: python -m app.worker
+    environment:
+      DATA_MODE: ${DATA_MODE:-replay}
+      POLL_INTERVAL_SECONDS: ${POLL_INTERVAL_SECONDS:-240}
+      MAX_SCAN_UNDERLYINGS: ${MAX_SCAN_UNDERLYINGS:-120}
+      POSTGRES_USER: ${POSTGRES_USER:-uoa}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-uoa}
+      POSTGRES_DB: ${POSTGRES_DB:-uoa}
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: 5432
+      REDIS_URL: redis://redis:6379/0
+      TZ: America/New_York
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      api:
+        condition: service_started
+    volumes:
+      - ./backend/fixtures:/app/fixtures:ro
+
+  web:
+    build:
+      context: ./web
+      args:
+        NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://localhost:8000}
+    environment:
+      NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://localhost:8000}
+      API_INTERNAL_URL: http://api:8000
+    ports:
+      - "3000:3000"
+    depends_on:
+      api:
+        condition: service_healthy
+
+volumes:
+  postgres_data:
