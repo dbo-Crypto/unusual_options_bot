@@ -1,0 +1,139 @@
+name: unusual_options_bot
+
+# Lean 24/7 stack. UI on 3003 / API on 8003 (3000 pred, 3001 Kuma, 3002 market).
+# Cap RAM so ProtectYourDoc is not squeezed.
+
+services:
+  postgres:
+    image: timescale/timescaledb:2.17.2-pg16
+    restart: unless-stopped
+    mem_limit: 256m
+    cpus: 0.30
+    environment:
+      POSTGRES_USER: uoa
+      POSTGRES_PASSWORD: uoa
+      POSTGRES_DB: uoa
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./backend/app/schema.sql:/docker-entrypoint-initdb.d/01-schema.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U uoa -d uoa"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+    expose:
+      - "5432"
+    logging:
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    mem_limit: 48m
+    cpus: 0.10
+    command: redis-server --save "" --appendonly no --maxmemory 32mb --maxmemory-policy allkeys-lru
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 10
+    expose:
+      - "6379"
+    logging:
+      options:
+        max-size: "5m"
+        max-file: "2"
+
+  api:
+    build: ./backend
+    restart: unless-stopped
+    mem_limit: 384m
+    cpus: 0.50
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --workers 1
+    env_file: .env
+    environment:
+      POSTGRES_USER: uoa
+      POSTGRES_PASSWORD: uoa
+      POSTGRES_DB: uoa
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: 5432
+      REDIS_URL: redis://redis:6379/0
+      TZ: America/New_York
+    ports:
+      - "127.0.0.1:8003:8000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_started
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:8000/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 12
+    logging:
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  worker:
+    build: ./backend
+    restart: unless-stopped
+    mem_limit: 384m
+    cpus: 0.50
+    command: python -m app.worker
+    env_file: .env
+    environment:
+      POSTGRES_USER: uoa
+      POSTGRES_PASSWORD: uoa
+      POSTGRES_DB: uoa
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: 5432
+      REDIS_URL: redis://redis:6379/0
+      TZ: America/New_York
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_started
+      api:
+        condition: service_started
+    logging:
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  web:
+    build:
+      context: ./web
+      target: runner
+      args:
+        NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://localhost:8003}
+        NEXT_PUBLIC_WS_URL: ${NEXT_PUBLIC_WS_URL:-ws://localhost:8003/ws}
+        NEXT_PUBLIC_BASE_PATH: ${NEXT_PUBLIC_BASE_PATH:-}
+    restart: unless-stopped
+    mem_limit: 256m
+    cpus: 0.40
+    env_file: .env
+    environment:
+      NODE_ENV: production
+      HOSTNAME: 0.0.0.0
+      PORT: "3000"
+      NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://localhost:8003}
+      NEXT_PUBLIC_WS_URL: ${NEXT_PUBLIC_WS_URL:-ws://localhost:8003/ws}
+      NEXT_PUBLIC_BASE_PATH: ${NEXT_PUBLIC_BASE_PATH:-}
+      API_INTERNAL_URL: http://api:8000
+    ports:
+      - "127.0.0.1:3003:3000"
+    depends_on:
+      api:
+        condition: service_healthy
+    logging:
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+volumes:
+  pgdata:

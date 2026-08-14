@@ -73,6 +73,9 @@ The **OCC confirm** page is the important one. Yesterday's spike is only a posit
 backend/     FastAPI + worker (Python 3.12)
 web/          Next.js terminal UI
 docker-compose.yml
+docker-compose.vps.yml
 ```
+
+VPS (same box as `market_bot` / `prediction_bot`): see `DEPLOY.md`. UI at `/options/`.
 
 To add a paid OPRA adapter later, implement `MarketDataProvider` and leave the UI alone.
