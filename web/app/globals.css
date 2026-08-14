@@ -3,28 +3,41 @@
 @tailwind utilities;
 
 :root {
-  color-scheme: dark;
+  --bg: #07080b;
+  --line: rgba(255, 255, 255, 0.06);
+  --text: #e9ecef;
+  --muted: #8b929c;
+  --green: #3ee08f;
+  --amber: #f0b429;
+  --rose: #ff5d73;
+  --blue: #7aa2ff;
 }
 
 html,
 body {
-  background: #07090c;
-  color: #e7ecf1;
+  background: var(--bg);
+  color: var(--text);
+  min-height: 100%;
 }
 
 body {
-  font-feature-settings: "ss01" on, "tnum" on;
+  background-image:
+    radial-gradient(1200px 500px at 10% -10%, rgba(62, 224, 143, 0.08), transparent 50%),
+    radial-gradient(900px 400px at 90% 0%, rgba(122, 162, 255, 0.06), transparent 45%),
+    linear-gradient(rgba(255, 255, 255, 0.025) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255, 255, 255, 0.025) 1px, transparent 1px);
+  background-size: auto, auto, 48px 48px, 48px 48px;
 }
 
-::-webkit-scrollbar {
-  width: 10px;
-  height: 10px;
-}
-::-webkit-scrollbar-thumb {
-  background: #2a3442;
-  border-radius: 999px;
+* {
+  scrollbar-width: thin;
+  scrollbar-color: #2a3140 transparent;
 }
 
-a {
-  color: inherit;
+.tabular {
+  font-variant-numeric: tabular-nums;
+}
+
+.hairline {
+  box-shadow: inset 0 0 0 1px var(--line);
 }

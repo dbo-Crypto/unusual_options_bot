@@ -72,7 +72,23 @@ export type PaperAccount = {
   winners: number;
   losers: number;
   flat: number;
+  worker_state?: string;
+  killed?: boolean;
+  last_error?: string | null;
   positions: PaperPosition[];
+};
+
+export type Overview = {
+  account: PaperAccount;
+  health: Health;
+  settings: Record<string, string | number | boolean>;
+  stats: {
+    wins: number;
+    losses: number;
+    flats: number;
+    win_rate: number | null;
+    signals: number;
+  };
 };
 
 export type GrokReview = {

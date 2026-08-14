@@ -2,382 +2,253 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { Shell } from "@/components/Shell";
-import {
-  API,
-  fetchAnalysis,
-  fetchAutoSettings,
-  fetchHealth,
-  importGrokPaste,
-  money,
-  runAutoTrader,
-  runGrokReview,
-  saveAutoSettings,
-} from "@/lib/api";
-import type { AnalysisBucket, AnalysisReport, Health } from "@/lib/types";
-
-function pnlClass(n: number) {
-  if (n > 0.5) return "text-call";
-  if (n < -0.5) return "text-put";
-  return "text-mist-500";
-}
+import { Stat } from "@/components/Stat";
+import { api } from "@/lib/api";
+import { money, tone } from "@/lib/format";
+import type { AnalysisBucket, AnalysisReport, GrokReview } from "@/lib/types";
 
 export default function AnalysisPage() {
-  const [health, setHealth] = useState<Health>();
   const [report, setReport] = useState<AnalysisReport>();
-  const [auto, setAuto] = useState({
-    enabled: true,
-    min_score: 80,
-    option_take_profit: 0.3,
-    option_stop_loss: 0.4,
-    stock_take_profit: 0.05,
-    stock_stop_loss: 0.04,
-  });
   const [msg, setMsg] = useState("");
-  const [grokBusy, setGrokBusy] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [downloading, setDownloading] = useState(false);
   const [paste, setPaste] = useState("");
 
   async function load() {
-    const [h, r, a] = await Promise.all([
-      fetchHealth().catch(() => undefined),
-      fetchAnalysis(),
-      fetchAutoSettings().catch(() => auto),
-    ]);
-    setHealth(h);
-    setReport(r);
-    setAuto(a);
+    setReport(await api.analysis());
   }
 
   useEffect(() => {
     load().catch((e) => setMsg(String(e)));
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  async function save() {
-    await saveAutoSettings(auto);
-    setMsg("Auto-trader settings saved. They apply on the next scan.");
+  async function runGrok() {
+    setBusy(true);
+    try {
+      const grok = await api.grokAnalysis();
+      setReport((cur) => (cur ? { ...cur, grok: grok as GrokReview } : cur));
+      setMsg("Grok re-read the book.");
+    } catch (e) {
+      setMsg(String(e));
+    } finally {
+      setBusy(false);
+    }
   }
 
   async function runNow() {
-    const out = await runAutoTrader();
-    setMsg(
-      `Auto-trader bought ${out.bought?.length || 0}, sold ${out.sold?.length || 0}, skipped ${out.skipped?.length || 0}.`
-    );
+    const out = await api.autoRun();
+    setMsg(`Auto-trader bought ${out.bought?.length || 0}, sold ${out.sold?.length || 0}, skipped ${out.skipped?.length || 0}.`);
     await load();
   }
 
   return (
-    <Shell health={health}>
-      <div className="mb-6 flex flex-wrap items-end justify-between gap-4">
+    <div className="space-y-8">
+      <div className="flex flex-wrap items-end justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-medium tracking-tight">Strategy analysis</h1>
-          <p className="mt-1 max-w-2xl text-sm text-mist-500">
-            Grok reads every paper fill and every scored alert, then says what to change. Numbers first, then the
-            review.
+          <h1 className="text-2xl tracking-tight">Analysis</h1>
+          <p className="mt-1 max-w-2xl text-sm text-zinc-500">
+            Grok reads every paper fill and every scored alert, then says what to change. Numbers first, then the review.
           </p>
         </div>
-        <div className="flex gap-2">
-          <button
-            onClick={async () => {
-              setGrokBusy(true);
-              try {
-                await runGrokReview();
-                await load();
-                setMsg("Grok re-read the book.");
-              } catch (e) {
-                setMsg(String(e));
-              } finally {
-                setGrokBusy(false);
-              }
-            }}
-            className="rounded-md bg-mist-100 px-3 py-1.5 text-sm text-ink-950"
-          >
-            {grokBusy ? "Reading…" : "Ask Grok to re-read"}
-          </button>
-          <button onClick={runNow} className="rounded-md border border-ink-600 px-3 py-1.5 text-sm text-mist-300">
+        <div className="flex flex-wrap gap-2">
+          <button className={btn()} onClick={() => void runNow()}>
             Run auto-trader now
           </button>
         </div>
       </div>
+      {msg ? <p className="text-sm text-zinc-400">{msg}</p> : null}
 
-      {msg && <p className="mb-4 text-sm text-call">{msg}</p>}
-
-      <section className="mb-8 rounded-lg border border-ink-700 bg-ink-900 p-4">
-        <h2 className="text-sm uppercase tracking-wide text-mist-500">Use Grok on X Premium (no API key)</h2>
-        <p className="mt-2 max-w-3xl text-sm leading-relaxed text-mist-300">
-          X Premium is chat, not an API. Download a <span className="font-mono">.txt</span> of the full book, upload
-          that file in{" "}
-          <a href="https://grok.x.com" className="text-ice underline" target="_blank" rel="noreferrer">
-            grok.x.com
-          </a>
-          , then paste Grok&apos;s reply below so it stays on this page.
-        </p>
-        <div className="mt-3 flex flex-wrap gap-2">
-          <a
-            href={`${API}/paper/analysis/briefing.txt`}
-            className="rounded-md bg-mist-100 px-3 py-1.5 text-sm text-ink-950"
-          >
-            Download briefing .txt
-          </a>
-          <a
-            href="https://grok.x.com"
-            target="_blank"
-            rel="noreferrer"
-            className="rounded-md border border-ink-600 px-3 py-1.5 text-sm text-mist-300"
-          >
-            Open grok.x.com
-          </a>
+      <section className="hairline rounded-2xl bg-ink-850/80 p-5">
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div>
+            <h2 className="text-base font-medium tracking-tight text-zinc-200">Grok desk review</h2>
+            <p className="mt-1 text-sm text-zinc-500">
+              Download the briefing and upload it in Grok chat (X Premium), or ask Grok here if an API key is set.
+            </p>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            <button
+              type="button"
+              onClick={() => {
+                setDownloading(true);
+                api
+                  .downloadBriefing()
+                  .catch((e) => setMsg(String(e)))
+                  .finally(() => setDownloading(false));
+              }}
+              className={btn()}
+            >
+              {downloading ? "Preparing…" : "Download for Grok chat"}
+            </button>
+            <a href="https://grok.x.com" target="_blank" rel="noreferrer" className={btn()}>
+              Open grok.x.com
+            </a>
+            <button type="button" onClick={() => void runGrok()} disabled={busy} className={btn()}>
+              {busy ? "Reading the book…" : "Ask Grok"}
+            </button>
+          </div>
         </div>
-        <label className="mt-4 block text-xs uppercase text-mist-500">
+        <label className="mt-4 block text-xs uppercase tracking-wider text-zinc-500">
           Paste Grok&apos;s reply
           <textarea
             value={paste}
             onChange={(e) => setPaste(e.target.value)}
-            rows={6}
+            rows={5}
             placeholder="Paste the full Grok answer here…"
-            className="mt-1 w-full rounded-md border border-ink-600 bg-ink-800 px-2 py-1.5 text-sm text-mist-100"
+            className="mt-1 w-full rounded-lg border border-white/10 bg-black/30 px-3 py-2 text-sm text-zinc-100 outline-none focus:border-emerald-400/40"
           />
         </label>
         <button
-          className="mt-2 rounded-md border border-ink-600 px-3 py-1.5 text-sm"
+          className={`${btn()} mt-2`}
           onClick={async () => {
             if (!paste.trim()) return;
-            await importGrokPaste(paste);
+            const grok = await api.importGrok(paste);
             setPaste("");
-            await load();
+            setReport((cur) => (cur ? { ...cur, grok: grok as GrokReview } : cur));
             setMsg("Imported Grok's X Premium review.");
           }}
         >
           Save reply on this page
         </button>
-      </section>
-
-      {report?.grok && (
-        <section className="mb-8 rounded-lg border border-ice/40 bg-ink-900 p-5">
-          <div className="text-[11px] uppercase tracking-wide text-ice">
-            Grok review · {report.grok.source || "local"}
-            {report.grok.generated_at ? ` · ${report.grok.generated_at.slice(0, 16).replace("T", " ")} UTC` : ""}
+        {report?.grok ? (
+          <div className="mt-5 space-y-4">
+            <div className="text-[11px] uppercase tracking-wider text-zinc-500">
+              {report.grok.source || "local"}
+              {report.grok.generated_at ? ` · ${report.grok.generated_at.slice(0, 16).replace("T", " ")} UTC` : ""}
+            </div>
+            <div className="text-lg text-zinc-100">{report.grok.headline}</div>
+            <p className="text-sm leading-relaxed text-zinc-300">{report.grok.summary}</p>
+            {report.grok.note ? <p className="text-sm text-amber-200">{report.grok.note}</p> : null}
+            <List title="What the book shows" items={report.grok.findings || []} />
+            <List title="What to change" items={report.grok.changes || []} />
+            <List title="Do not fool yourself" items={report.grok.risks || []} />
           </div>
-          <h2 className="mt-2 text-xl font-medium tracking-tight">{report.grok.headline}</h2>
-          <p className="mt-2 max-w-3xl text-sm leading-relaxed text-mist-300">{report.grok.summary}</p>
-          {report.grok.note && <p className="mt-2 text-xs text-amber">{report.grok.note}</p>}
-          {!!report.grok.findings?.length && (
-            <>
-              <h3 className="mt-5 text-xs uppercase tracking-wide text-mist-500">What the book shows</h3>
-              <ul className="mt-2 list-disc space-y-1.5 pl-5 text-sm leading-relaxed text-mist-300">
-                {report.grok.findings.map((f) => (
-                  <li key={f}>{f}</li>
-                ))}
-              </ul>
-            </>
-          )}
-          {!!report.grok.changes?.length && (
-            <>
-              <h3 className="mt-5 text-xs uppercase tracking-wide text-mist-500">Change the strategy like this</h3>
-              <ul className="mt-2 list-disc space-y-1.5 pl-5 text-sm leading-relaxed text-mist-100">
-                {report.grok.changes.map((f) => (
-                  <li key={f}>{f}</li>
-                ))}
-              </ul>
-            </>
-          )}
-          {!!report.grok.risks?.length && (
-            <>
-              <h3 className="mt-5 text-xs uppercase tracking-wide text-mist-500">Do not fool yourself</h3>
-              <ul className="mt-2 list-disc space-y-1.5 pl-5 text-sm leading-relaxed text-mist-500">
-                {report.grok.risks.map((f) => (
-                  <li key={f}>{f}</li>
-                ))}
-              </ul>
-            </>
-          )}
-        </section>
-      )}
-
-      <section className="mb-8 rounded-lg border border-ink-700 bg-ink-900 p-4">
-        <h2 className="text-sm uppercase tracking-wide text-mist-500">Auto-trader</h2>
-        <p className="mt-1 mb-3 text-sm text-mist-300">
-          Hands-off. High-score calls buy the call (and leftover stock on the strongest name). High-score puts buy the
-          put and sell any long stock on that name. Exits are automatic: take-profit, stop-loss, OCC thesis dead, or
-          opposite flow. Hedges, 0-day, rolls, and lottery tickets are never traded.
-        </p>
-        <div className="flex flex-wrap items-end gap-4 text-sm">
-          <label className="flex items-center gap-2">
-            <input
-              type="checkbox"
-              checked={auto.enabled}
-              onChange={(e) => setAuto({ ...auto, enabled: e.target.checked })}
-            />
-            On
-          </label>
-          <label className="text-xs text-mist-500">
-            Min score
-            <input
-              type="number"
-              value={auto.min_score}
-              onChange={(e) => setAuto({ ...auto, min_score: Number(e.target.value) })}
-              className="mt-1 block w-20 rounded-md border border-ink-600 bg-ink-800 px-2 py-1 font-mono text-sm text-mist-100"
-            />
-          </label>
-          <label className="text-xs text-mist-500">
-            Option take-profit
-            <input
-              type="number"
-              step="0.05"
-              value={auto.option_take_profit}
-              onChange={(e) => setAuto({ ...auto, option_take_profit: Number(e.target.value) })}
-              className="mt-1 block w-24 rounded-md border border-ink-600 bg-ink-800 px-2 py-1 font-mono text-sm text-mist-100"
-            />
-          </label>
-          <label className="text-xs text-mist-500">
-            Option stop
-            <input
-              type="number"
-              step="0.05"
-              value={auto.option_stop_loss}
-              onChange={(e) => setAuto({ ...auto, option_stop_loss: Number(e.target.value) })}
-              className="mt-1 block w-24 rounded-md border border-ink-600 bg-ink-800 px-2 py-1 font-mono text-sm text-mist-100"
-            />
-          </label>
-          <button onClick={save} className="rounded-md border border-ink-600 px-3 py-1">
-            Save
-          </button>
-        </div>
+        ) : null}
       </section>
 
       {!report ? (
-        <p className="text-mist-500">Loading…</p>
+        <p className="text-zinc-500">Loading analysis…</p>
       ) : (
         <>
-          <div className="mb-8 grid gap-3 sm:grid-cols-4">
-            <Stat label="Trades" value={String(report.overall.n)} sub={`${report.open_count} still open`} />
+          <div className="grid gap-3 md:grid-cols-4">
+            <Stat label="Trades" value={String(report.overall.n)} hint={`${report.open_count} still open`} />
             <Stat
               label="Win rate"
               value={`${report.overall.win_rate}%`}
-              sub={`${report.overall.winners} win / ${report.overall.losers} loss`}
+              hint={`${report.overall.winners}W / ${report.overall.losers}L`}
             />
-            <Stat
-              label="Total P&L"
-              value={money(report.overall.total_pnl)}
-              cls={pnlClass(report.overall.total_pnl)}
-            />
-            <Stat
-              label="Avg trade"
-              value={money(report.overall.expectancy)}
-              cls={pnlClass(report.overall.expectancy)}
-              sub="open trades counted at today’s mark"
-            />
+            <Stat label="Net P&L" value={money(report.overall.total_pnl)} signed raw={report.overall.total_pnl} />
+            <Stat label="Expectancy" value={money(report.overall.expectancy)} signed raw={report.overall.expectancy} hint="per trade" />
           </div>
-
-          <h2 className="mb-2 text-sm uppercase tracking-wide text-mist-500">What to change</h2>
-          <ul className="mb-8 list-disc space-y-2 pl-5 text-sm leading-relaxed text-mist-300">
-            {report.lessons.map((l) => (
-              <li key={l}>{l}</li>
-            ))}
-          </ul>
-
-          <div className="mb-8 grid gap-6 lg:grid-cols-2">
+          <section className="hairline rounded-2xl bg-ink-850/80 p-5">
+            <h2 className="text-base font-medium tracking-tight text-zinc-200">Rule notes</h2>
+            <ul className="mt-3 space-y-2">
+              {report.lessons.map((note) => (
+                <li key={note} className="text-sm leading-relaxed text-zinc-300">
+                  {note}
+                </li>
+              ))}
+            </ul>
+          </section>
+          <div className="grid gap-4 lg:grid-cols-2">
             <BucketTable title="Stock vs option" rows={report.by_kind} />
             <BucketTable title="Calls vs puts" rows={report.by_side} />
             <BucketTable title="By unusual score" rows={report.by_score} />
             <BucketTable title="Auto vs manual" rows={report.by_origin} />
           </div>
-
-          <h2 className="mb-2 text-sm uppercase tracking-wide text-mist-500">By detector tag</h2>
-          <p className="mb-3 text-xs text-mist-500">
-            A tag is a reason the alert fired (for example “multi_day” means the same contract lit up several sessions).
-            If one tag keeps losing, turn that idea down.
-          </p>
-          <BucketTable title="" rows={report.by_tag} />
-
-          <h2 className="mb-2 mt-8 text-sm uppercase tracking-wide text-mist-500">Every paper trade</h2>
-          <div className="overflow-hidden rounded-lg border border-ink-700">
-            <table className="w-full text-left text-sm">
-              <thead className="bg-ink-850 font-mono text-[11px] uppercase text-mist-500">
+          <BucketTable title="By detector tag" rows={report.by_tag} />
+          <section className="hairline overflow-hidden rounded-2xl bg-ink-850/80">
+            <div className="border-b border-white/5 px-4 py-3 text-base font-medium tracking-tight text-zinc-200">
+              Every paper trade
+            </div>
+            <table className="w-full text-sm">
+              <thead className="text-left text-[11px] uppercase tracking-wider text-zinc-500">
                 <tr>
-                  <th className="px-3 py-2">Name</th>
-                  <th className="px-3 py-2">Kind</th>
-                  <th className="px-3 py-2">How</th>
-                  <th className="px-3 py-2 text-right">Score</th>
-                  <th className="px-3 py-2 text-right">P&L</th>
-                  <th className="px-3 py-2">Result</th>
+                  {["Name", "Kind", "How", "Score", "P&L", "Result"].map((col) => (
+                    <th key={col} className="px-4 py-2 font-medium">
+                      {col}
+                    </th>
+                  ))}
                 </tr>
               </thead>
               <tbody>
                 {report.trades.map((t) => (
-                  <tr key={t.id} className="border-t border-ink-700 odd:bg-ink-900">
-                    <td className="px-3 py-2">
-                      <Link href={`/ticker/${t.symbol}`} className="hover:text-ice">
+                  <tr key={t.id} className="border-t border-white/5">
+                    <td className="px-4 py-2">
+                      <Link href={`/ticker/${t.symbol}`} className="hover:text-white">
                         {t.symbol}
                       </Link>{" "}
-                      <span className="text-mist-500">{t.company_name}</span>
+                      <span className="text-zinc-500">{t.company_name}</span>
                     </td>
-                    <td className="px-3 py-2 capitalize">{t.kind}</td>
-                    <td className="px-3 py-2 text-xs">{t.origin}</td>
-                    <td className="px-3 py-2 text-right font-mono">{t.score ?? "—"}</td>
-                    <td className={`px-3 py-2 text-right font-mono ${pnlClass(t.pnl)}`}>{money(t.pnl)}</td>
-                    <td className={`px-3 py-2 capitalize ${pnlClass(t.pnl)}`}>{t.result}</td>
+                    <td className="px-4 py-2 capitalize text-zinc-400">{t.kind}</td>
+                    <td className="px-4 py-2 text-zinc-400">{t.origin}</td>
+                    <td className="px-4 py-2 font-mono">{t.score ?? "—"}</td>
+                    <td className={`px-4 py-2 font-mono ${tone(t.pnl)}`}>{money(t.pnl)}</td>
+                    <td className={`px-4 py-2 capitalize ${tone(t.pnl)}`}>{t.result}</td>
                   </tr>
                 ))}
               </tbody>
             </table>
-          </div>
+          </section>
         </>
       )}
-    </Shell>
+    </div>
   );
 }
 
-function Stat({ label, value, sub, cls }: { label: string; value: string; sub?: string; cls?: string }) {
+function List({ title, items }: { title: string; items: string[] }) {
+  if (!items.length) return null;
   return (
-    <div className="rounded-lg border border-ink-700 bg-ink-900 p-3">
-      <div className="text-[11px] uppercase tracking-wide text-mist-500">{label}</div>
-      <div className={`font-mono text-xl ${cls || ""}`}>{value}</div>
-      {sub && <div className="text-xs text-mist-500">{sub}</div>}
+    <div>
+      <h3 className="text-sm text-zinc-200">{title}</h3>
+      <ul className="mt-2 space-y-2">
+        {items.map((item) => (
+          <li key={item} className="text-sm leading-relaxed text-zinc-300">
+            {item}
+          </li>
+        ))}
+      </ul>
     </div>
   );
 }
 
 function BucketTable({ title, rows }: { title: string; rows: Record<string, AnalysisBucket> }) {
   const keys = Object.keys(rows);
-  if (!keys.length) {
-    return (
-      <div>
-        {title && <h3 className="mb-2 text-sm uppercase tracking-wide text-mist-500">{title}</h3>}
-        <p className="text-sm text-mist-500">No trades in this slice yet.</p>
-      </div>
-    );
-  }
   return (
-    <div>
-      {title && <h3 className="mb-2 text-sm uppercase tracking-wide text-mist-500">{title}</h3>}
-      <div className="overflow-hidden rounded-lg border border-ink-700">
-        <table className="w-full text-left text-sm">
-          <thead className="bg-ink-850 font-mono text-[11px] uppercase text-mist-500">
+    <section className="hairline overflow-hidden rounded-2xl bg-ink-850/80">
+      <div className="border-b border-white/5 px-4 py-3 text-sm text-zinc-300">{title}</div>
+      {!keys.length ? (
+        <p className="px-4 py-4 text-sm text-zinc-500">No trades in this slice yet.</p>
+      ) : (
+        <table className="w-full text-sm">
+          <thead className="text-left text-[11px] uppercase tracking-wider text-zinc-500">
             <tr>
-              <th className="px-3 py-2">Slice</th>
-              <th className="px-3 py-2 text-right">N</th>
-              <th className="px-3 py-2 text-right">Win %</th>
-              <th className="px-3 py-2 text-right">P&L</th>
-              <th className="px-3 py-2 text-right">Avg</th>
+              {["Bucket", "N", "Win", "P&L"].map((col) => (
+                <th key={col} className="px-4 py-2 font-medium">
+                  {col}
+                </th>
+              ))}
             </tr>
           </thead>
           <tbody>
             {keys.map((k) => {
               const b = rows[k];
               return (
-                <tr key={k} className="border-t border-ink-700 odd:bg-ink-900">
-                  <td className="px-3 py-2">{k}</td>
-                  <td className="px-3 py-2 text-right font-mono">{b.n}</td>
-                  <td className="px-3 py-2 text-right font-mono">{b.win_rate}%</td>
-                  <td className={`px-3 py-2 text-right font-mono ${pnlClass(b.total_pnl)}`}>{money(b.total_pnl)}</td>
-                  <td className={`px-3 py-2 text-right font-mono ${pnlClass(b.expectancy)}`}>{money(b.expectancy)}</td>
+                <tr key={k} className="border-t border-white/5">
+                  <td className="px-4 py-2">{k}</td>
+                  <td className="px-4 py-2 font-mono">{b.n}</td>
+                  <td className="px-4 py-2 font-mono">{b.win_rate}%</td>
+                  <td className={`px-4 py-2 font-mono ${tone(b.total_pnl)}`}>{money(b.total_pnl)}</td>
                 </tr>
               );
             })}
           </tbody>
         </table>
-      </div>
-    </div>
+      )}
+    </section>
   );
+}
+
+function btn() {
+  return "rounded-full border border-white/10 px-4 py-2 text-sm text-zinc-200 hover:border-white/25 disabled:opacity-40";
 }

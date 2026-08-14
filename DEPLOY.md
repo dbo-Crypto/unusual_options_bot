@@ -71,9 +71,11 @@ Set the public URLs (ProtectYourDoc nginx fronts this desk at `/options/`):
 # in .env
 DATA_MODE=live
 CORS_ORIGINS=https://vps-43564666.vps.ovh.net
-NEXT_PUBLIC_API_URL=https://vps-43564666.vps.ovh.net/options/api
+NEXT_PUBLIC_API_URL=https://vps-43564666.vps.ovh.net/options
 NEXT_PUBLIC_WS_URL=wss://vps-43564666.vps.ovh.net/options/ws
 NEXT_PUBLIC_BASE_PATH=/options
+DESK_TOKEN=long-random-token
+NEXT_PUBLIC_DESK_TOKEN=long-random-token
 ```
 
 `POSTGRES_*` / `REDIS_URL` stay as in `.env.example` (they talk to the other containers). Compose overrides host to `postgres`.

@@ -24,4 +24,5 @@ out/
 .vscode/
 *.swp
 web/next-env.d.ts
+*.tsbuildinfo
 data/

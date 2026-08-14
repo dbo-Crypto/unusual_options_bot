@@ -23,6 +23,18 @@ class Settings(BaseSettings):
     feed_min_score: float = 55.0
     unusual_min_score: float = 70.0
     alert_min_score: float = 80.0
+    paper_bankroll: float = 1000
+
+    api_host: str = "0.0.0.0"
+    api_port: int = 8000
+    cors_origins: str = "http://localhost:3000"
+    desk_token: str = ""
+    xai_api_key: str = ""
+    xai_model: str = "grok-4.5"
+
+    @property
+    def cors_origin_list(self) -> list[str]:
+        return [item.strip() for item in self.cors_origins.split(",") if item.strip()]
 
     @property
     def database_url(self) -> str:

@@ -12,6 +12,7 @@ from sqlalchemy import text
 
 from app.config import get_settings
 from app.db import get_session, init_db
+from app.desk import load_desk_settings, set_worker_control
 from app.jobs.alerts import dispatch_alerts
 from app.jobs.autotrade import auto_close, auto_trade
 from app.jobs.paper import mark_positions, seed_account
@@ -81,6 +82,17 @@ def load_replay() -> None:
         session.close()
 
 
+def _control_blocks(session) -> str | None:
+    acc = session.execute(text("SELECT worker_state, killed FROM paper_account WHERE id = 1")).mappings().first()
+    if not acc:
+        return None
+    if acc.get("killed") or acc.get("worker_state") == "halted":
+        return "halted"
+    if acc.get("worker_state") == "paused":
+        return "paused"
+    return None
+
+
 def live_cycle() -> None:
     settings = get_settings()
     yahoo = YahooProvider()
@@ -89,13 +101,19 @@ def live_cycle() -> None:
     try:
         seed_screeners(session)
         seed_account(session)
+        blocked = _control_blocks(session)
+        if blocked:
+            set_health(session, "ingest", {"mode": "live", "ok": True, "state": blocked, "skipped": True})
+            log.info("live cycle skipped — worker %s", blocked)
+            return
+        desk = load_desk_settings(session)
         watch = list(session.execute(text("SELECT symbol FROM watchlist")).scalars().all())
         prior = list(
             session.execute(
                 text("SELECT DISTINCT underlying FROM signals WHERE created_at > NOW() - INTERVAL '2 days'")
             ).scalars().all()
         )
-        symbols = list(dict.fromkeys([*watch, *prior, *yahoo.discover()]))[: settings.max_scan_underlyings]
+        symbols = list(dict.fromkeys([*watch, *prior, *yahoo.discover()]))[: int(desk["max_scan_underlyings"])]
         underlyings: list[UnderlyingInfo] = []
         snapshots = []
         occ_rows = []
@@ -154,6 +172,10 @@ def live_cycle() -> None:
     except Exception:
         log.exception("live cycle failed")
         set_health(session, "ingest", {"mode": "live", "ok": False, "error": "cycle failed"})
+        try:
+            set_worker_control(session, last_error="live cycle failed")
+        except Exception:
+            pass
     finally:
         session.close()
 
@@ -161,6 +183,10 @@ def live_cycle() -> None:
 def occ_confirm_job() -> None:
     session = get_session()
     try:
+        seed_account(session)
+        if _control_blocks(session):
+            log.info("OCC confirm skipped — worker not running")
+            return
         n = run_confirmation(session)
         sold = auto_close(session)
         set_health(session, "occ_confirm", {"updated": n, "auto_sold": len(sold), "asof": datetime.now(ET).isoformat()})

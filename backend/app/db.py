@@ -96,6 +96,9 @@ MIGRATIONS = [
         created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     )
     """,
+    "ALTER TABLE paper_account ADD COLUMN IF NOT EXISTS worker_state TEXT NOT NULL DEFAULT 'running'",
+    "ALTER TABLE paper_account ADD COLUMN IF NOT EXISTS killed BOOLEAN NOT NULL DEFAULT FALSE",
+    "ALTER TABLE paper_account ADD COLUMN IF NOT EXISTS last_error TEXT",
 ]
 
 

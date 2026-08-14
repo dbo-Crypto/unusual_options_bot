@@ -1,30 +1,20 @@
 /** @type {import('tailwindcss').Config} */
 module.exports = {
-  content: ["./app/**/*.{ts,tsx}", "./components/**/*.{ts,tsx}"],
+  content: ["./app/**/*.{ts,tsx}", "./components/**/*.{ts,tsx}", "./lib/**/*.{ts,tsx}"],
   theme: {
     extend: {
       fontFamily: {
-        sans: ["IBM Plex Sans", "ui-sans-serif", "system-ui"],
-        mono: ["IBM Plex Mono", "ui-monospace", "monospace"],
+        sans: ["var(--font-sans)", "system-ui", "sans-serif"],
+        mono: ["var(--font-mono)", "ui-monospace", "monospace"],
       },
       colors: {
         ink: {
-          950: "#07090c",
-          900: "#0b0e11",
-          850: "#10151c",
-          800: "#161c24",
-          700: "#1e2631",
-          600: "#2a3442",
+          950: "#07080b",
+          900: "#0d0f14",
+          850: "#11141b",
+          800: "#171b24",
+          700: "#1e2430",
         },
-        mist: {
-          100: "#e7ecf1",
-          300: "#b4c0cc",
-          500: "#8b98a5",
-        },
-        call: "#3dd68c",
-        put: "#ff5d5d",
-        amber: "#f5c14a",
-        ice: "#4da3ff",
       },
     },
   },

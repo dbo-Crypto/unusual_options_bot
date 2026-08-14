@@ -1,51 +1,42 @@
-import type { AlertRule, AnalysisReport, Health, PaperAccount, Signal, TickerPayload } from "./types";
+import type { AlertRule, AnalysisReport, Health, Overview, PaperAccount, Signal, TickerPayload } from "./types";
 
-export const API =
+export const API_URL =
   typeof window === "undefined"
     ? process.env.API_INTERNAL_URL || process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000"
     : process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+export const DESK_TOKEN = process.env.NEXT_PUBLIC_DESK_TOKEN ?? "";
 
-async function get<T>(path: string): Promise<T> {
-  const res = await fetch(`${API}${path}`, { cache: "no-store" });
-  if (!res.ok) throw new Error(`${res.status} ${path}`);
-  return res.json();
+function withToken(url: string): string {
+  if (!DESK_TOKEN) return url;
+  const sep = url.includes("?") ? "&" : "?";
+  return `${url}${sep}token=${encodeURIComponent(DESK_TOKEN)}`;
 }
 
-export function fetchSignals(params: Record<string, string | number | undefined> = {}) {
-  const q = new URLSearchParams();
-  Object.entries(params).forEach(([k, v]) => {
-    if (v !== undefined && v !== "") q.set(k, String(v));
+export const WS_URL = withToken(process.env.NEXT_PUBLIC_WS_URL ?? "ws://localhost:8000/ws");
+
+async function request<T>(path: string, init?: RequestInit): Promise<T> {
+  const response = await fetch(`${API_URL}${path}`, {
+    ...init,
+    headers: {
+      "Content-Type": "application/json",
+      ...(DESK_TOKEN ? { "X-Desk-Token": DESK_TOKEN } : {}),
+      ...(init?.headers ?? {}),
+    },
+    cache: "no-store",
   });
-  const qs = q.toString();
-  return get<{ items: Signal[]; count: number }>(`/signals${qs ? `?${qs}` : ""}`);
+  if (!response.ok) {
+    let detail = `${response.status} ${response.statusText}`;
+    try {
+      const body = (await response.json()) as { detail?: unknown };
+      if (typeof body.detail === "string") detail = body.detail;
+    } catch {
+      /* keep status text */
+    }
+    throw new Error(detail);
+  }
+  return response.json() as Promise<T>;
 }
 
-export const fetchHealth = () => get<Health>("/health");
-export const fetchTicker = (symbol: string) => get<TickerPayload>(`/tickers/${symbol}`);
-export const fetchOccReport = () => get<{ session_date: string | null; items: Signal[] }>("/occ/report");
-export const fetchScreeners = () => get<{ items: { id: string; name: string; filters: Record<string, unknown> }[] }>("/screeners");
-export const fetchRules = () => get<{ items: AlertRule[] }>("/alerts/rules");
-export const fetchWatchlist = () => get<{ symbols: string[] }>("/watchlist");
-export const fetchPaper = () => get<PaperAccount>("/paper");
-export const fetchAnalysis = () => get<AnalysisReport>("/paper/analysis");
-
-export async function runGrokReview() {
-  const res = await fetch(`${API}/paper/analysis/grok`, { method: "POST" });
-  if (!res.ok) throw new Error("Grok review failed");
-  return res.json();
-}
-
-export const fetchGrokBriefing = () => get<{ prompt: string; grok_url: string; chars: number }>("/paper/analysis/briefing");
-
-export async function importGrokPaste(text: string) {
-  const res = await fetch(`${API}/paper/analysis/grok-import`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ text }),
-  });
-  if (!res.ok) throw new Error("Could not import that reply");
-  return res.json();
-}
 export type AutoSettings = {
   enabled: boolean;
   min_score: number;
@@ -55,72 +46,66 @@ export type AutoSettings = {
   stock_stop_loss: number;
 };
 
-export const fetchAutoSettings = () => get<AutoSettings>("/paper/auto");
-
-export async function saveAutoSettings(body: AutoSettings) {
-  const res = await fetch(`${API}/paper/auto`, {
-    method: "PUT",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(body),
-  });
-  if (!res.ok) throw new Error("save auto settings failed");
-  return res.json();
-}
-
-export async function runAutoTrader() {
-  const res = await fetch(`${API}/paper/auto-run`, { method: "POST" });
-  const data = await res.json();
-  if (!res.ok) throw new Error(data.detail || "auto-run failed");
-  return data;
-}
-
-export async function paperReset(wipeHistory = false) {
-  const res = await fetch(`${API}/paper/reset?wipe_history=${wipeHistory}`, { method: "POST" });
-  if (!res.ok) throw new Error("reset failed");
-  return res.json();
-}
-
-export async function putWatchlist(symbols: string[]) {
-  const res = await fetch(`${API}/watchlist`, {
-    method: "PUT",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ symbols }),
-  });
-  if (!res.ok) throw new Error("watchlist save failed");
-}
-
-export async function createRule(body: Partial<AlertRule>) {
-  const res = await fetch(`${API}/alerts/rules`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(body),
-  });
-  if (!res.ok) throw new Error("rule create failed");
-  return res.json();
-}
-
-export async function updateRule(id: string, body: Partial<AlertRule>) {
-  const res = await fetch(`${API}/alerts/rules/${id}`, {
-    method: "PUT",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(body),
-  });
-  if (!res.ok) throw new Error("rule update failed");
-}
-
-export const money = (n: number | null | undefined) => {
-  if (n == null || Number.isNaN(n)) return "—";
-  const abs = Math.abs(n);
-  if (abs >= 1_000_000) return `$${(n / 1_000_000).toFixed(2)}M`;
-  if (abs >= 1_000) return `$${(n / 1_000).toFixed(0)}k`;
-  return `$${n.toFixed(0)}`;
-};
-
-export const num = (n: number | null | undefined, d = 0) =>
-  n == null || Number.isNaN(n) ? "—" : n.toLocaleString(undefined, { maximumFractionDigits: d });
-
-export const fmtExpiry = (iso: string | null | undefined) => {
-  if (!iso) return "—";
-  const d = iso.slice(0, 10);
-  return d.slice(5).replace("-", "/");
+export const api = {
+  overview: () => request<Overview>("/api/overview"),
+  health: () => request<Health>("/api/health"),
+  signals: (params: Record<string, string | number | undefined> = {}) => {
+    const q = new URLSearchParams();
+    Object.entries(params).forEach(([k, v]) => {
+      if (v !== undefined && v !== "") q.set(k, String(v));
+    });
+    const qs = q.toString();
+    return request<{ items: Signal[]; count: number }>(`/api/signals${qs ? `?${qs}` : ""}`);
+  },
+  ticker: (symbol: string) => request<TickerPayload>(`/api/tickers/${symbol}`),
+  occ: () => request<{ session_date: string | null; items: Signal[] }>("/api/occ/report"),
+  screeners: () => request<{ items: { id: string; name: string; filters: Record<string, unknown> }[] }>("/api/screeners"),
+  rules: () => request<{ items: AlertRule[] }>("/api/alerts/rules"),
+  watchlist: () => request<{ symbols: string[] }>("/api/watchlist"),
+  paper: () => request<PaperAccount>("/api/paper"),
+  analysis: () => request<AnalysisReport>("/api/paper/analysis"),
+  settings: () => request<Record<string, string | number | boolean>>("/api/settings"),
+  auto: () => request<AutoSettings>("/api/paper/auto"),
+  grokAnalysis: () => request<AnalysisReport["grok"]>("/api/paper/analysis/grok", { method: "POST" }),
+  importGrok: (text: string) =>
+    request<AnalysisReport["grok"]>("/api/paper/analysis/grok-import", {
+      method: "POST",
+      body: JSON.stringify({ text }),
+    }),
+  saveAuto: (body: AutoSettings) =>
+    request<AutoSettings>("/api/paper/auto", { method: "PUT", body: JSON.stringify(body) }),
+  patchSettings: (body: Record<string, string | number | boolean>) =>
+    request<Record<string, string | number | boolean>>("/api/settings", {
+      method: "PATCH",
+      body: JSON.stringify(body),
+    }),
+  control: (action: string) => request<{ ok: boolean; state: string; killed: boolean }>(`/api/control/${action}`, { method: "POST" }),
+  autoRun: () => request<{ bought: unknown[]; sold: unknown[]; skipped: unknown[] }>("/api/paper/auto-run", { method: "POST" }),
+  paperReset: (wipeHistory = false) =>
+    request<PaperAccount>(`/api/paper/reset?wipe_history=${wipeHistory}`, { method: "POST" }),
+  putWatchlist: (symbols: string[]) =>
+    request<unknown>("/api/watchlist", { method: "PUT", body: JSON.stringify({ symbols }) }),
+  createRule: (body: Partial<AlertRule>) =>
+    request<AlertRule>("/api/alerts/rules", { method: "POST", body: JSON.stringify(body) }),
+  updateRule: (id: string, body: Partial<AlertRule>) =>
+    request<unknown>(`/api/alerts/rules/${id}`, { method: "PUT", body: JSON.stringify(body) }),
+  downloadBriefing: async () => {
+    const response = await fetch(`${API_URL}/api/paper/analysis/briefing.txt`, {
+      headers: DESK_TOKEN ? { "X-Desk-Token": DESK_TOKEN } : {},
+      cache: "no-store",
+    });
+    if (!response.ok) throw new Error(`${response.status} ${response.statusText}`);
+    const blob = await response.blob();
+    const header = response.headers.get("content-disposition") || "";
+    const match = /filename="?([^"]+)"?/.exec(header);
+    const name = match?.[1] || "options-desk-briefing.txt";
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = name;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    URL.revokeObjectURL(url);
+  },
 };

@@ -1,12 +1,10 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Shell } from "@/components/Shell";
-import { API, createRule, fetchHealth, fetchRules, updateRule } from "@/lib/api";
-import type { AlertRule, Health } from "@/lib/types";
+import { api } from "@/lib/api";
+import type { AlertRule } from "@/lib/types";
 
 export default function AlertsPage() {
-  const [health, setHealth] = useState<Health>();
   const [rules, setRules] = useState<AlertRule[]>([]);
   const [name, setName] = useState("Watchlist high conviction");
   const [min, setMin] = useState(80);
@@ -14,18 +12,16 @@ export default function AlertsPage() {
   const [msg, setMsg] = useState("");
 
   async function refresh() {
-    const [h, r] = await Promise.all([fetchHealth().catch(() => undefined), fetchRules()]);
-    setHealth(h);
-    setRules(r.items);
+    setRules((await api.rules()).items);
   }
 
   useEffect(() => {
-    refresh();
+    refresh().catch((e) => setMsg(String(e)));
   }, []);
 
   async function addRule(e: React.FormEvent) {
     e.preventDefault();
-    await createRule({
+    await api.createRule({
       name,
       enabled: true,
       min_score: min,
@@ -36,79 +32,73 @@ export default function AlertsPage() {
     });
     setMsg("Rule saved. Discord/webhook fires when the worker scores a matching contract.");
     setWebhook("");
-    refresh();
+    await refresh();
   }
 
   async function toggle(rule: AlertRule) {
-    await updateRule(rule.id, { ...rule, enabled: !rule.enabled });
-    refresh();
+    await api.updateRule(rule.id, { ...rule, enabled: !rule.enabled });
+    await refresh();
   }
 
   return (
-    <Shell health={health}>
-      <h1 className="text-2xl font-medium tracking-tight">Alerts</h1>
-      <p className="mt-1 mb-6 max-w-2xl text-sm text-mist-500">
-        Rules run after every scoring pass. Default filters drop 0DTE, rolls, and two-sided vol trades. Leave the webhook
-        empty for in-app-only (events still log at {API}/alerts/events).
-      </p>
-
-      <form onSubmit={addRule} className="mb-8 grid max-w-xl gap-3 rounded-lg border border-ink-700 bg-ink-900 p-4">
-        <label className="text-xs uppercase text-mist-500">
+    <div className="max-w-3xl space-y-6">
+      <div>
+        <h1 className="text-2xl tracking-tight">Alerts</h1>
+        <p className="mt-1 text-sm text-zinc-500">
+          Rules run after every scoring pass. Default filters drop 0DTE, rolls, and two-sided vol trades. Leave the
+          webhook empty for in-app only.
+        </p>
+      </div>
+      {msg ? <p className="text-sm text-zinc-400">{msg}</p> : null}
+      <form onSubmit={addRule} className="hairline space-y-3 rounded-2xl bg-ink-850/80 p-5">
+        <label className="block text-xs uppercase tracking-wider text-zinc-500">
           Name
           <input
             value={name}
             onChange={(e) => setName(e.target.value)}
-            className="mt-1 w-full rounded-md border border-ink-600 bg-ink-800 px-2 py-1.5 text-sm text-mist-100"
+            className="mt-1 w-full rounded-lg border border-white/10 bg-black/30 px-3 py-2 text-sm outline-none focus:border-emerald-400/40"
           />
         </label>
-        <label className="text-xs uppercase text-mist-500">
+        <label className="block text-xs uppercase tracking-wider text-zinc-500">
           Min score
           <input
             type="number"
             value={min}
             onChange={(e) => setMin(Number(e.target.value))}
-            className="mt-1 w-full rounded-md border border-ink-600 bg-ink-800 px-2 py-1.5 text-sm text-mist-100"
+            className="mt-1 w-full rounded-lg border border-white/10 bg-black/30 px-3 py-2 font-mono text-sm outline-none focus:border-emerald-400/40"
           />
         </label>
-        <label className="text-xs uppercase text-mist-500">
+        <label className="block text-xs uppercase tracking-wider text-zinc-500">
           Discord or webhook URL
           <input
             value={webhook}
             onChange={(e) => setWebhook(e.target.value)}
             placeholder="https://discord.com/api/webhooks/…"
-            className="mt-1 w-full rounded-md border border-ink-600 bg-ink-800 px-2 py-1.5 text-sm text-mist-100"
+            className="mt-1 w-full rounded-lg border border-white/10 bg-black/30 px-3 py-2 text-sm outline-none focus:border-emerald-400/40"
           />
         </label>
-        <button className="rounded-md bg-mist-100 px-3 py-1.5 text-sm text-ink-950">Save rule</button>
-        {msg && <p className="text-xs text-call">{msg}</p>}
+        <button className="rounded-full border border-emerald-400/30 bg-emerald-400/10 px-4 py-2 text-sm text-emerald-200">
+          Save rule
+        </button>
       </form>
-
-      <div className="overflow-hidden rounded-lg border border-ink-700">
-        <table className="w-full text-left text-sm">
-          <thead className="bg-ink-850 font-mono text-[11px] uppercase text-mist-500">
-            <tr>
-              <th className="px-3 py-2">Name</th>
-              <th className="px-3 py-2">Min</th>
-              <th className="px-3 py-2">Channels</th>
-              <th className="px-3 py-2">On</th>
-            </tr>
-          </thead>
-          <tbody>
-            {rules.map((r) => (
-              <tr key={r.id} className="border-t border-ink-700 odd:bg-ink-900">
-                <td className="px-3 py-2">{r.name}</td>
-                <td className="px-3 py-2 font-mono">{r.min_score}</td>
-                <td className="px-3 py-2 font-mono text-xs">{r.channels?.length ? r.channels.map((c) => c.type).join(", ") : "log only"}</td>
-                <td className="px-3 py-2">
-                  <button onClick={() => toggle(r)} className="text-ice underline">
-                    {r.enabled ? "enabled" : "paused"}
-                  </button>
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
+      <div className="space-y-3">
+        {rules.map((rule) => (
+          <div key={rule.id} className="hairline flex items-center justify-between rounded-2xl bg-ink-850/80 px-4 py-3">
+            <div>
+              <div className="text-sm">{rule.name}</div>
+              <div className="font-mono text-[11px] text-zinc-500">min {rule.min_score}</div>
+            </div>
+            <button
+              onClick={() => void toggle(rule)}
+              className={`rounded-full border px-3 py-1 text-[11px] uppercase tracking-wider ${
+                rule.enabled ? "border-emerald-400/30 text-emerald-300" : "border-white/10 text-zinc-500"
+              }`}
+            >
+              {rule.enabled ? "on" : "off"}
+            </button>
+          </div>
+        ))}
       </div>
-    </Shell>
+    </div>
   );
 }

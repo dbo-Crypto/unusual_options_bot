@@ -21,6 +21,7 @@ from app.jobs.grok_review import (
     run_grok_review,
 )
 from app.jobs.autotrade import auto_close, auto_trade, get_auto_settings, save_auto_settings
+from app.desk import apply_control, load_desk_settings, save_desk_settings
 from app.jobs.paper import get_account, mark_positions, reset_account, seed_account
 
 router = APIRouter()
@@ -71,8 +72,22 @@ class PaperAutoIn(BaseModel):
     stock_stop_loss: float = 0.04
 
 
-@router.get("/health")
-def health():
+class SettingsPatch(BaseModel):
+    poll_interval_seconds: int | None = Field(default=None, ge=60, le=3600)
+    max_scan_underlyings: int | None = Field(default=None, ge=5, le=200)
+    feed_min_score: float | None = Field(default=None, ge=0, le=100)
+    unusual_min_score: float | None = Field(default=None, ge=0, le=100)
+    alert_min_score: float | None = Field(default=None, ge=0, le=100)
+    auto_enabled: bool | None = None
+    auto_min_score: float | None = Field(default=None, ge=50, le=100)
+    option_take_profit: float | None = Field(default=None, ge=0.05, le=2)
+    option_stop_loss: float | None = Field(default=None, ge=0.05, le=1)
+    stock_take_profit: float | None = Field(default=None, ge=0.01, le=0.5)
+    stock_stop_loss: float | None = Field(default=None, ge=0.01, le=0.5)
+    watchlist: str | None = None
+
+
+def _health_payload() -> dict[str, Any]:
     settings = get_settings()
     session = get_session()
     try:
@@ -101,6 +116,74 @@ def health():
         ),
         "disclaimer": "Not investment advice. Premium is estimated. Intraday data is delayed. Flow is a radar, not a signal to copy.",
     }
+
+
+@router.get("/health")
+def health():
+    return _health_payload()
+
+
+@router.get("/overview")
+def overview():
+    session = get_session()
+    try:
+        seed_account(session)
+        account = get_account(session)
+        health_payload = _health_payload()
+        settings = load_desk_settings(session)
+        closed = account["winners"] + account["losers"] + account["flat"]
+        win_rate = (account["winners"] / closed) if closed else None
+        return _jsonable(
+            {
+                "account": account,
+                "health": health_payload,
+                "settings": settings,
+                "stats": {
+                    "wins": account["winners"],
+                    "losses": account["losers"],
+                    "flats": account["flat"],
+                    "win_rate": win_rate,
+                    "signals": health_payload.get("signals") or 0,
+                },
+            }
+        )
+    finally:
+        session.close()
+
+
+@router.get("/settings")
+def settings_get():
+    session = get_session()
+    try:
+        return load_desk_settings(session)
+    finally:
+        session.close()
+
+
+@router.patch("/settings")
+def settings_patch(body: SettingsPatch):
+    session = get_session()
+    try:
+        return save_desk_settings(session, body.model_dump(exclude_none=True))
+    finally:
+        session.close()
+
+
+@router.post("/control/{action}")
+def control(action: str):
+    session = get_session()
+    try:
+        try:
+            account = apply_control(session, action)
+        except ValueError:
+            raise HTTPException(400, "Unknown action") from None
+        return {
+            "ok": True,
+            "state": account.get("worker_state"),
+            "killed": account.get("killed"),
+        }
+    finally:
+        session.close()
 
 
 @router.get("/signals")

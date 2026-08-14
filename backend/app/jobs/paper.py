@@ -49,6 +49,9 @@ def get_account(session: Session) -> dict:
         "winners": winners,
         "losers": losers,
         "flat": sum(1 for p in closed if (p["realized_pnl"] or 0) == 0),
+        "worker_state": acc.get("worker_state") or "running",
+        "killed": bool(acc.get("killed")),
+        "last_error": acc.get("last_error"),
         "positions": [dict(p) for p in positions],
     }
 

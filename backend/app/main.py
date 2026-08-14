@@ -4,26 +4,35 @@ import asyncio
 import json
 import logging
 
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect
+from fastapi import FastAPI, Request, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.api.routes import router
 from app.config import get_settings
 from app.db import init_db
+from app.desk_auth import accept_desk_ws, desk_http_guard
 from app.jobs.paper import seed_account
 from app.db import get_session
 from app.redisutil import CHANNEL_SIGNALS, get_redis
 
-logging.basicConfig(level=get_settings().log_level)
+settings = get_settings()
+logging.basicConfig(level=settings.log_level)
 app = FastAPI(title="Unusual Options Bot", version="0.1.0")
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=settings.cors_origin_list or ["*"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
-app.include_router(router)
+
+
+@app.middleware("http")
+async def _desk_guard(request: Request, call_next):
+    return await desk_http_guard(request, call_next, settings.desk_token)
+
+
+app.include_router(router, prefix="/api")
 
 
 @app.on_event("startup")
@@ -41,9 +50,15 @@ def root():
     return {"name": "unusual-options-bot", "docs": "/docs", "health": "/health"}
 
 
+@app.get("/health")
+def health():
+    return {"ok": True, "mode": "paper"}
+
+
 @app.websocket("/ws")
 async def ws_feed(ws: WebSocket):
-    await ws.accept()
+    if not await accept_desk_ws(ws, settings.desk_token):
+        return
     pubsub = get_redis().pubsub()
     pubsub.subscribe(CHANNEL_SIGNALS)
     try:

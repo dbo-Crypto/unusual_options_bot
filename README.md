@@ -26,7 +26,8 @@ make up
 ```
 
 - UI: http://localhost:3000
-- Paper trades: http://localhost:3000/paper
+- Paper trades: http://localhost:3000/trades
+- Control: http://localhost:3000/control
 - API: http://localhost:8000/docs
 
 Default `DATA_MODE=replay` loads fixtures so the UI is full immediately.
